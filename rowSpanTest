@@ -1,0 +1,94 @@
+import React, {  useMemo } from "react";
+import { AgGridReact } from "ag-grid-react";
+import { ModuleRegistry, AllCommunityModule, themeAlpine } from 'ag-grid-community';
+    
+    ModuleRegistry.registerModules([ AllCommunityModule ]);
+
+const FacilityGrid = () => {
+  const rowData = [
+    { facilityType: "소화설비", facilityName: "소화기", model: "ABC-3.3kg", location: "1층 복도1" },
+    { facilityType: "소화설비", facilityName: "소화기", model: "ABCd-3.3kg", location: "1층 복도2" },
+    { facilityType: "소화설비", facilityName: "소화기", model: "ABcde-3.3kg", location: "1층 복도3" },
+    { facilityType: "소화설비", facilityName: "옥내소화전", model: "ABC-3.3kg", location: "지하1층1 " },
+    { facilityType: "소화설비", facilityName: "옥내소화전", model: "DN65", location: "지하1층2" },
+    { facilityType: "경보설비", facilityName: "비상벨", model: "BZ-100", location: "2층 계단1" },
+    { facilityType: "경보설비", facilityName: "비상벨", model: "BZ-1001", location: "2층 계단2" },
+    { facilityType: "경보설비", facilityName: "자동화재탐지설비", model: "Smoke-Detector1", location: "각층 복도1" },
+    { facilityType: "경보설비", facilityName: "자동화재탐지설비", model: "Smoke-Detector2", location: "각층 복도2" },
+    { facilityType: "피난설비", facilityName: "유도등", model: "LED-Exit", location: "출입구" },
+    { facilityType: "피난설비", facilityName: "유도등", model: "LED-Exit2", location: "출입구2" },
+    { facilityType: "피난설비", facilityName: "비상조명등", model: "LED-Light", location: "계단실1" },
+    { facilityType: "피난설비", facilityName: "비상조명등", model: "LED-Light2", location: "계단실2" },
+    ];
+
+  // 커뮤니티 버전용 "시각적 병합" 렌더러: 연속 구간의 첫 행만 값 표시
+  const renderMergedBy = (field) => (params) => {
+    const index = params.node.rowIndex;
+    if (index > 0) {
+      const prev = params.api.getDisplayedRowAtIndex(index - 1);
+      if (prev && prev.data && prev.data[field] === params.value) {
+        return "";
+      }
+    }
+    return params.value;
+  };
+
+  const makeMergeClassRules = (field) => ({
+    'merge-start': (p) => {
+      const i = p.node.rowIndex;
+      const v = p.value;
+      const prev = i > 0 ? p.api.getDisplayedRowAtIndex(i - 1) : null;
+      const isStart = !(prev && prev.data && prev.data[field] === v);
+      const next = p.api.getDisplayedRowAtIndex(i + 1);
+      const hasNextSame = !!(next && next.data && next.data[field] === v);
+      return isStart && hasNextSame;
+    },
+    'merge-mid': (p) => {
+      const i = p.node.rowIndex;
+      const v = p.value;
+      const prev = i > 0 ? p.api.getDisplayedRowAtIndex(i - 1) : null;
+      const next = p.api.getDisplayedRowAtIndex(i + 1);
+      const prevSame = !!(prev && prev.data && prev.data[field] === v);
+      const nextSame = !!(next && next.data && next.data[field] === v);
+      return prevSame && nextSame;
+    },
+    'merge-end': (p) => {
+      const i = p.node.rowIndex;
+      const v = p.value;
+      const prev = i > 0 ? p.api.getDisplayedRowAtIndex(i - 1) : null;
+      const next = p.api.getDisplayedRowAtIndex(i + 1);
+      const prevSame = !!(prev && prev.data && prev.data[field] === v);
+      const nextSame = !!(next && next.data && next.data[field] === v);
+      return prevSame && !nextSame;
+    },
+  });
+
+  const columnDefs = useMemo(() => [
+    {
+      headerName: "시설유형",
+      field: "facilityType",
+      cellRenderer: renderMergedBy("facilityType"),
+      cellClassRules: makeMergeClassRules('facilityType'),
+    },
+    { headerName: "시설명",
+      field: "facilityName",
+      cellRenderer: renderMergedBy("facilityName"),
+      cellClassRules: makeMergeClassRules('facilityName'),
+    },
+    { headerName: "모델명", field: "model" },
+    { headerName: "위치", field: "location" }
+  ], []);
+
+  return (
+    <div className="grid-merge" style={{ width : 800 , height : 800 }}>
+      <AgGridReact
+        rowData={rowData}
+        columnDefs={columnDefs}
+        suppressRowTransform={true} // rowSpan 쓸 때 필수
+        theme={themeAlpine}
+      />
+    </div>
+  );
+};
+
+export default FacilityGrid;
