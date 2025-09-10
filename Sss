@@ -69,3 +69,16 @@ const getRowSpan = (params, field) => {
 };
 
 export default GridWithRowSpan;
+
+
+SELECT
+    facilityName,
+    facilityType,
+    SUM(CASE WHEN cycle = '1개월'  THEN 1 ELSE 0 END) AS cnt_1m,
+    SUM(CASE WHEN cycle = '3개월'  THEN 1 ELSE 0 END) AS cnt_3m,
+    SUM(CASE WHEN cycle = '6개월'  THEN 1 ELSE 0 END) AS cnt_6m,
+    SUM(CASE WHEN cycle = '12개월' THEN 1 ELSE 0 END) AS cnt_12m
+FROM facility_table
+GROUP BY facilityName, facilityType
+ORDER BY facilityName, facilityType;
+
