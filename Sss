@@ -81,4 +81,45 @@ SELECT
 FROM facility_table
 GROUP BY facilityName, facilityType
 ORDER BY facilityName, facilityType;
+<update id="mergeParentWithChildren" parameterType="com.example.demo.vo.ParentVO">
+    BEGIN
+        SELECT parent_seq.NEXTVAL INTO #{parentId} FROM dual;
+
+        MERGE INTO parent p
+        USING (
+            SELECT #{parentId} AS parent_id,
+                   #{name} AS name,
+                   #{description} AS description
+            FROM dual
+        ) src
+        ON (p.parent_id = src.parent_id)
+        WHEN MATCHED THEN
+            UPDATE SET p.name = src.name,
+                       p.description = src.description
+        WHEN NOT MATCHED THEN
+            INSERT (parent_id, name, description)
+            VALUES (src.parent_id, src.name, src.description);
+
+        <if test="children != null and !children.isEmpty()">
+            MERGE INTO child c
+            USING (
+                <foreach collection="children" item="child" separator="UNION ALL">
+                    SELECT #{child.childId} AS child_id,
+                           #{parentId} AS parent_id,
+                           #{child.childName} AS child_name,
+                           #{child.value} AS value
+                    FROM dual
+                </foreach>
+            ) src
+            ON (c.child_id = src.child_id)
+            WHEN MATCHED THEN
+                UPDATE SET c.child_name = src.child_name,
+                           c.value = src.value,
+                           c.parent_id = src.parent_id
+            WHEN NOT MATCHED THEN
+                INSERT (child_id, parent_id, child_name, value)
+                VALUES (src.child_id, src.parentId, src.childName, src.value);
+        </if>
+    END;
+</update>
 
