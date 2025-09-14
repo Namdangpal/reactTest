@@ -1,0 +1,115 @@
+package com.ilsungprint.itteam.member.service.impl;
+
+
+import com.ilsungprint.itteam.member.dto.ParentVO;
+import com.ilsungprint.itteam.member.mapper.ParentMapper;
+import com.ilsungprint.itteam.member.service.ParentService;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class ParentServiceImpl implements ParentService {
+
+    private final ParentMapper parentMapper;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    
+    public ParentServiceImpl(ParentMapper parentMapper, com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
+        this.parentMapper = parentMapper;
+        this.objectMapper = objectMapper;
+    }
+    
+
+    @Override
+    @Transactional
+    public void saveItem(com.ilsungprint.itteam.member.dto.DynamicRequestVO request) throws Exception {
+        // DynamicRequestVO에서 ParentVO 추출
+        
+        // payload에서 부모 객체 추출
+        Object parentObj = request.getPayload().get("parent");
+
+        if (parentObj != null) {
+            // JSON 변환 후 ParentVO로 매핑
+            ParentVO parent = objectMapper.convertValue(parentObj, ParentVO.class);
+
+            // 자식 parentId 자동 세팅
+            if (parent.getChildren() != null) {
+                parent.getChildren().forEach(c -> c.setParentId(parent.getParentId()));
+            }
+
+            // Mapper 호출
+            parentMapper.saveItem(parent);
+        }
+
+        // 필요 시 다른 payload 객체도 JSON 변환 후 VO 처리 가능
+        // Object otherObj = request.getPayload().get("otherEntity");
+        // OtherVO other = objectMapper.convertValue(otherObj, OtherVO.class);
+    
+
+    }
+}
+
+// 추가적인 서비스 메서드 구현 가능
+
+
+
+
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.ilsungprint.itteam.member.mapper.ParentMapper">
+
+    <!-- 부모 + 자식 MERGE -->
+    <insert id="saveItem" parameterType="com.ilsungprint.itteam.member.dto.ParentVO">
+
+        <!-- 1. 부모 PK 채번 -->
+        <selectKey keyProperty="parentId" resultType="long" order="BEFORE">
+            SELECT parent_seq.NEXTVAL FROM dual
+        </selectKey>
+        BEGIN
+        <!-- 2. 부모 MERGE -->
+        MERGE INTO parent p
+        USING (
+            SELECT #{parentId} AS parent_id,
+                   #{name} AS name,
+                   #{description} AS description
+            FROM dual
+        ) src
+        ON (p.parent_id = src.parent_id)
+        WHEN MATCHED THEN
+            UPDATE SET p.name = src.name,
+                       p.description = src.description
+        WHEN NOT MATCHED THEN
+            INSERT (parent_id, name, description)
+            VALUES (src.parent_id, src.name, src.description) ;
+
+        <!-- 3. 자식 MERGE -->
+        <if test="children != null and children.size > 0">
+            MERGE INTO child c
+            USING (
+            <foreach collection="children" item="child" separator="UNION ALL">
+
+                    SELECT #{child.childId} AS child_id,
+                           #{parentId} AS parent_id,
+                           #{child.childName} AS child_name,
+                           #{child.value} AS value
+                    FROM dual
+            </foreach>
+                ) src
+                ON (c.child_id = src.child_id)
+                WHEN MATCHED THEN
+                    UPDATE SET c.child_name = src.child_name,
+                               c.value = src.value,
+                               c.parent_id = src.parent_id 
+                WHEN NOT MATCHED THEN
+                    INSERT (child_id, parent_id, child_name, value)
+                    VALUES (src.child_id, src.parent_id, src.child_name, src.value) ;                   
+                    
+        </if>
+        END;        
+        
+    </insert>
+
+</mapper>
