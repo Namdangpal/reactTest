@@ -1,0 +1,33 @@
+/**
+ * 2주 단위 점검계획 자동 생성 함수
+ * @param {string} startDate - 계획 시작일 (예: "2025-01-01")
+ * @param {string} endDate - 계획 종료일 (예: "2025-06-30")
+ * @param {string} baseDate - 선택 기준일 (예: "2025-01-01")
+ * @returns {Array} 점검일 목록 [{round: 1, date: "2025-01-01"}, ...]
+ */
+function generateBiweeklyPlans(startDate, endDate, baseDate) {
+  const plans = [];
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  let current = new Date(baseDate);
+  let round = 1;
+
+  // baseDate가 startDate보다 이전이면 startDate부터 시작
+  if (current < start) current = new Date(start);
+
+  while (current <= end) {
+    plans.push({
+      round: round++, // 회차
+      date: current.toISOString().split("T")[0],
+    });
+
+    // 다음 2주(14일)로 이동
+    current.setDate(current.getDate() + 14);
+  }
+
+  return plans;
+}
+
+// ✅ 예시 실행
+const plans = generateBiweeklyPlans("2025-01-01", "2025-06-30", "2025-01-01");
+console.log(plans);
