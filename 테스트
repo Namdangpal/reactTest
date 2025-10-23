@@ -1,0 +1,54 @@
+/**
+ * 한 달에 2건(2주 간격) 점검계획 자동 생성 함수
+ * @param {string} startDate - 계획 시작일 (예: "2025-01-01")
+ * @param {string} endDate - 계획 종료일 (예: "2025-12-31")
+ * @param {string} baseDate - 기준일 (예: "2025-01-01")
+ * @returns {Array} 월별 점검 계획 [{month: '2025-01', schedules: [...] }]
+ */
+function generateMonthlyTwoPlans(startDate, endDate, baseDate) {
+  const plans = [];
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const base = new Date(baseDate);
+
+  let current = new Date(start.getFullYear(), start.getMonth(), 1);
+
+  while (current <= end) {
+    const year = current.getFullYear();
+    const month = current.getMonth();
+
+    // 상반월 (1차 점검): 매월 1일
+    const firstPlan = new Date(year, month, 1);
+    // 하반월 (2차 점검): 매월 15일
+    const secondPlan = new Date(year, month, 15);
+
+    // 종료일 범위 내만 포함
+    const monthPlans = [];
+    if (firstPlan >= start && firstPlan <= end) {
+      monthPlans.push({
+        round: 1,
+        date: firstPlan.toISOString().split("T")[0],
+      });
+    }
+    if (secondPlan >= start && secondPlan <= end) {
+      monthPlans.push({
+        round: 2,
+        date: secondPlan.toISOString().split("T")[0],
+      });
+    }
+
+    plans.push({
+      month: `${year}-${String(month + 1).padStart(2, "0")}`,
+      schedules: monthPlans,
+    });
+
+    // 다음 달로 이동
+    current.setMonth(current.getMonth() + 1);
+  }
+
+  return plans;
+}
+
+// ✅ 예제 실행
+const plans = generateMonthlyTwoPlans("2025-01-01", "2025-06-30", "2025-01-01");
+console.log(plans);
