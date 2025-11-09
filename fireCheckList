@@ -137,3 +137,145 @@ i = 0
 5.생성된 점검일이 한달이면
 
 
+CREATE OR ALTER PROCEDURE dbo.GenerateInspectionSchedule2WFirst1M
+(
+    @StartDate DATE,
+    @EndDate DATE
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -----------------------------
+    -- 1️⃣ 대상항목 + 반복주기 분리
+    -----------------------------
+    ;WITH ItemCycles AS
+    (
+        SELECT 
+            I.ITEM_ID,
+            I.BASE_DAY,
+            I.BASE_MONTH,
+            TRIM(value) AS CYCLE,
+            CASE WHEN CHARINDEX('2W', I.CYCLE_TYPES) > 0 THEN 1 ELSE 0 END AS HAS_2W
+        FROM INSPECTION_ITEM I
+        CROSS APPLY STRING_SPLIT(I.CYCLE_TYPES, ',')
+        WHERE USE_YN = 'Y'
+    ),
+
+    -----------------------------
+    -- 2️⃣ 주기별 날짜 계산 (재귀 CTE)
+    -----------------------------
+    ScheduleDates AS
+    (
+        SELECT 
+            IC.ITEM_ID,
+            IC.CYCLE,
+            IC.HAS_2W,
+            DATEFROMPARTS(YEAR(@StartDate), MONTH(@StartDate), IC.BASE_DAY) AS INSPECTION_DATE
+        FROM ItemCycles IC
+
+        UNION ALL
+
+        SELECT
+            SD.ITEM_ID,
+            SD.CYCLE,
+            SD.HAS_2W,
+            CASE 
+                WHEN SD.CYCLE = '2W' THEN DATEADD(DAY, 14, SD.INSPECTION_DATE)
+                WHEN SD.CYCLE = '1M' THEN DATEADD(MONTH, 1, SD.INSPECTION_DATE)
+                WHEN SD.CYCLE = '3M' THEN DATEADD(MONTH, 3, SD.INSPECTION_DATE)
+                WHEN SD.CYCLE = '6M' THEN DATEADD(MONTH, 6, SD.INSPECTION_DATE)
+                WHEN SD.CYCLE = '12M' THEN DATEADD(YEAR, 1, SD.INSPECTION_DATE)
+            END
+        FROM ScheduleDates SD
+        WHERE 
+            CASE 
+                WHEN SD.CYCLE = '2W' THEN DATEADD(DAY, 14, SD.INSPECTION_DATE)
+                WHEN SD.CYCLE = '1M' THEN DATEADD(MONTH, 1, SD.INSPECTION_DATE)
+                WHEN SD.CYCLE = '3M' THEN DATEADD(MONTH, 3, SD.INSPECTION_DATE)
+                WHEN SD.CYCLE = '6M' THEN DATEADD(MONTH, 6, SD.INSPECTION_DATE)
+                WHEN SD.CYCLE = '12M' THEN DATEADD(YEAR, 1, SD.INSPECTION_DATE)
+            END <= @EndDate
+    ),
+
+    -----------------------------
+    -- 3️⃣ 2W 첫 일정 + 1M 병합 처리
+    -----------------------------
+    AdjustedDates AS
+    (
+        SELECT 
+            ITEM_ID,
+            INSPECTION_DATE,
+            CASE 
+                -- 2W 일정은 그대로
+                WHEN CYCLE = '2W' THEN '2W'
+
+                -- 1M 일정 처리: HAS_2W인 경우 해당 월 첫 2W와 병합
+                WHEN CYCLE = '1M' AND HAS_2W = 1 AND EXISTS (
+                    SELECT 1 
+                    FROM ScheduleDates SD2
+                    WHERE SD2.ITEM_ID = SD.ITEM_ID
+                      AND SD2.CYCLE = '2W'
+                      AND YEAR(SD2.INSPECTION_DATE) = YEAR(SD.INSPECTION_DATE)
+                      AND MONTH(SD2.INSPECTION_DATE) = MONTH(SD.INSPECTION_DATE)
+                      AND SD2.INSPECTION_DATE = (
+                          SELECT MIN(INSPECTION_DATE) 
+                          FROM ScheduleDates SD3
+                          WHERE SD3.ITEM_ID = SD.ITEM_ID
+                            AND SD3.CYCLE = '2W'
+                            AND YEAR(SD3.INSPECTION_DATE) = YEAR(SD.INSPECTION_DATE)
+                            AND MONTH(SD3.INSPECTION_DATE) = MONTH(SD.INSPECTION_DATE)
+                      )
+                ) THEN '2W,1M'
+
+                -- 1M 단독 일정은 생성하지 않음
+                WHEN CYCLE = '1M' AND HAS_2W = 1 THEN NULL
+
+                ELSE CYCLE
+            END AS CYCLE_TYPE
+        FROM ScheduleDates SD
+    ),
+
+    -----------------------------
+    -- 4️⃣ NULL 제거 + 동일 날짜 주기 병합
+    -----------------------------
+    DistinctDates AS
+    (
+        SELECT 
+            ITEM_ID,
+            INSPECTION_DATE,
+            STRING_AGG(CYCLE_TYPE, ',') AS CYCLE_TYPES
+        FROM AdjustedDates
+        WHERE CYCLE_TYPE IS NOT NULL
+        GROUP BY ITEM_ID, INSPECTION_DATE
+    )
+
+    -----------------------------
+    -- 5️⃣ MERGE로 DB 반영
+    -----------------------------
+    MERGE dbo.INSPECTION_SCHEDULE AS TARGET
+    USING DistinctDates AS SRC
+    ON TARGET.ITEM_ID = SRC.ITEM_ID AND TARGET.INSPECTION_DATE = SRC.INSPECTION_DATE
+    WHEN MATCHED THEN
+        UPDATE SET 
+            CYCLE_TYPES = 
+                CASE 
+                    WHEN CHARINDEX(SRC.CYCLE_TYPES, TARGET.CYCLE_TYPES) = 0 
+                    THEN CONCAT(TARGET.CYCLE_TYPES, ',', SRC.CYCLE_TYPES)
+                    ELSE TARGET.CYCLE_TYPES
+                END,
+            UPDATED_AT = GETDATE()
+    WHEN NOT MATCHED THEN
+        INSERT (ITEM_ID, INSPECTION_DATE, CYCLE_TYPES)
+        VALUES (SRC.ITEM_ID, SRC.INSPECTION_DATE, SRC.CYCLE_TYPES);
+
+    -----------------------------
+    -- 6️⃣ JSON 결과 반환
+    -----------------------------
+    SELECT ITEM_ID, INSPECTION_DATE, CYCLE_TYPES
+    FROM dbo.INSPECTION_SCHEDULE
+    ORDER BY ITEM_ID, INSPECTION_DATE
+    FOR JSON AUTO;
+
+END
+GO
